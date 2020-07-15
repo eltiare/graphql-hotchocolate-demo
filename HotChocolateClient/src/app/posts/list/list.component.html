@@ -1,0 +1,11 @@
+<h1>Posts</h1>
+
+<button mat-raised-button routerLink="edit" [queryParams]="{ id: 'new' }" color="primary">New Post</button>
+
+<mat-card *ngFor="let post of posts" routerLink="show" [queryParams]="{ id: post.id }">
+  <button mat-flat-button color="accent" routerLink="edit" [queryParams]="{ id: post.id }">
+    Edit
+  </button>
+  <button mat-flat-button color="warn" (click)="delete(post); $event.preventDefault(); $event.stopImmediatePropagation();">Delete</button>
+  {{ post.title }}
+</mat-card>

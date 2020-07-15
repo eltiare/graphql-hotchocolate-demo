@@ -1,0 +1,20 @@
+<ng-container *ngIf="post">
+  <h1>{{ id === 'new' ? 'New' : 'Edit'}} Post</h1>
+  <div>
+    <mat-form-field>
+      <mat-label>Post Title</mat-label>
+      <input matInput  [(ngModel)]="post.title">
+    </mat-form-field>
+  </div>
+  <div>
+    <mat-form-field>
+      <mat-label>Post Content</mat-label>
+      <textarea matInput [(ngModel)]="post.content"></textarea>
+    </mat-form-field>
+  </div>
+
+  <div>
+    <button mat-raised-button color="primary" (click)="save()">Save</button>
+  </div>
+
+</ng-container>

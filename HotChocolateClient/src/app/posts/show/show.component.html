@@ -1,0 +1,16 @@
+<ng-container *ngIf="post">
+  <h1>{{ post.title }}</h1>
+
+  <div>
+    {{ post.content }}
+  </div>
+
+  <h2>Comments</h2>
+
+  <mat-card *ngFor="let comment in (post.comments || [])">
+    <h4>{{ comment.posterName }}</h4>
+    {{ comment.content }}
+  </mat-card>
+</ng-container>
+
+
