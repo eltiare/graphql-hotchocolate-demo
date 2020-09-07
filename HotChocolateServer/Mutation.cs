@@ -1,20 +1,9 @@
-using System;
-using System.Threading.Tasks;
-using HotChocolate.Types;
-
 namespace HotChocolateServer
 {
-    public class PostInputType : InputObjectType<Post>
-    {
-    }
-
-    public class CommentInputType : InputObjectType<Comment>
-    {
-    }
     
     public class Mutation
     {
-        private readonly DataStore _db;
+        /*private readonly DataStore _db;
 
         public Mutation(DataStore db)
         {
@@ -54,6 +43,6 @@ namespace HotChocolateServer
             _db.Remove(comment);
             await _db.SaveChangesAsync();
             return true;
-        }
+        }*/
     }
 }

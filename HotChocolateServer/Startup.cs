@@ -1,10 +1,7 @@
-using System;
-using System.Security.Policy;
 using HotChocolate;
 using HotChocolate.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -16,14 +13,8 @@ namespace HotChocolateServer
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddDbContext<DataStore>(o => 
-                o.UseSqlite("Filename=test.db").EnableSensitiveDataLogging());
             services.AddGraphQL(s => SchemaBuilder.New()
                 .AddServices(s)
-                .AddType<PostType>()
-                .AddType<CommentType>()
-                .AddType<PostInputType>()
-                .AddType<CommentInputType>()
                 .AddQueryType<Query>()
                 .AddMutationType<Mutation>()
                 .Create()
