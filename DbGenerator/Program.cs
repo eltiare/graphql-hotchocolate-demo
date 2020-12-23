@@ -5,6 +5,7 @@ using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using DataGlue;
 using DbGenerator.ClassBuilder;
 
 namespace DbGenerator
@@ -25,6 +26,8 @@ namespace DbGenerator
                            c.name as column_name,
                            type_name(user_type_id) as data_type,
                            dc.definition as default_value,
+                           is_output = CAST(0 as bit),
+                           is_readonly = CAST(0 as bit),
                            c.*
                     FROM sys.columns c
                     INNER JOIN sys.objects o ON o.object_id = c.object_id
@@ -33,7 +36,24 @@ namespace DbGenerator
                              table_name,
                              column_id;";
 
-        private const string ProcQuery = @"";
+        private const string ProcQuery = @"
+                    SELECT name AS column_name,
+                           proc_name = object_name(object_id),
+                           data_type = type_name(user_type_id),
+                           default_value,
+                           max_length,
+                           precision,
+                           scale,
+                           is_output,
+                           is_readonly,
+                           is_nullable,
+                           is_filestream = CAST(0 as bit),
+                           is_computed = CAST(0 as bit),
+                           parameter_id,
+                           system_type_id
+                    FROM sys.parameters
+                    ORDER BY object_id,
+                             parameter_id;";
         
         private static string _baseDir = null!;
         private static string _baseNamespace = null!;
@@ -49,7 +69,7 @@ namespace DbGenerator
             builder.ConnectionString = args[0]; // parses string and checks for errors 
             
             _baseDir = Path.Join(args[1], DataDir);
-            _baseNamespace = args[2];
+            _baseNamespace = $"{args[2]}.DataModels";
             
             // Empty data model directory
             var di = new DirectoryInfo(_baseDir);
@@ -74,40 +94,71 @@ namespace DbGenerator
             var tables = new Dictionary<string, Class>();
             foreach (DataRow row in columnInfo.Rows)
             {
-                
                 var tableName = row.Field<string>("table_name");
                 var tableType = row.Field<string>("table_type");
                 if (SkipTablesArr.Contains(tableType) || SkipTables.IsMatch(tableName))
                     continue;
+                var isView = tableType == "VIEW";
                 if (!tables.ContainsKey(tableName))
-                    tables.Add(tableName, new Class(tableName)
+                    tables.Add(tableName, new Class(tableName, isView ? DbSystemType.View : DbSystemType.Table)
                     {
-                        IsView = tableType == "VIEW"
+                        IsView = isView
                     });
-                    
-                var isNullable = row.Field<bool>("is_nullable");;
-                var isComputed = row.Field<bool>("is_computed");
-                var hasDefault = row.Field<string?>("default_value") != null;
-                var prop = new Property(row.Field<string>("column_name"), row.Field<string>("data_type"))
-                {
-                    IsFileStream = row.Field<bool>("is_filestream"),
-                    IsRequired = !isNullable && !hasDefault && !isComputed && tableType != "VIEW",
-                    IsNullable = isNullable,
-                    MaxLength = row.Field<short>("max_length")
-                };
-                tables[tableName].Properties.Add(prop);
+                tables[tableName].Properties.Add(MakeProperty(row));
             }
-            var @namespace = new Namespace($"{_baseNamespace}.DataModels")
+            
+            // Get parameter information for procs
+            var procInfo = conn.GetData(ProcQuery);
+            var procs = new Dictionary<string, Class>();
+            foreach (DataRow row in procInfo.Rows)
             {
-                Usings = new List<string> { "System", "System.Collections.Generic", "System.ComponentModel.DataAnnotations", "System.ComponentModel.DataAnnotations.Schema" }
+                var procName = row.Field<string>("proc_name");
+                if (SkipProcs.IsMatch(procName))
+                    continue;
+                if (!procs.ContainsKey(procName))
+                    procs.Add(procName, new Class(procName, DbSystemType.Procedure));
+                procs[procName].Properties.Add(MakeProperty(row));
+            }
+            
+            var @namespace = new Namespace(string.Empty)
+            {
+                Usings = new List<string> { "System", "System.Data", "System.Collections.Generic", "System.ComponentModel.DataAnnotations", "System.ComponentModel.DataAnnotations.Schema", "DataGlue" }
             };
             foreach (var @class in tables.Values)
-            {
-                @namespace.Classes = new List<Class> {@class};
+            {   
                 var prefix = @class.IsView ? "Views" : "Tables";
-                var code = ClassFactory.CreateCode(@namespace);
-                WriteCode(Path.Join(prefix, $"{@class.Name}.cs"), code);
+                @namespace.Classes = new List<Class> { @class };
+                WriteNamespace(@namespace, prefix, $"{ @class.ProperName }.cs");
             }
+
+            const string procPrefix = "Procedures";
+            foreach (var proc in procs.Values)
+            {
+                @namespace.Classes = new List<Class> {proc};
+                WriteNamespace(@namespace, procPrefix, $"{ proc.ProperName }.cs");
+            }
+        }
+
+        private static Property MakeProperty(DataRow row)
+        {
+            var isNullable = row.Field<bool>("is_nullable");;
+            var isComputed = row.Field<bool?>("is_computed") ?? false;
+            var hasDefault = row.Field<string?>("default_value") != null;
+            return new Property(row.Field<string>("column_name"), row.Field<string>("data_type"))
+            {
+                IsFileStream = row.Field<bool>("is_filestream"),
+                IsRequired = !isNullable && !hasDefault && !isComputed,
+                IsNullable = isNullable,
+                MaxLength = row.Field<short>("max_length"),
+                IsOutput = row.Field<bool>("is_output")
+            };   
+        }
+
+        private static void WriteNamespace(Namespace @namespace, string prefix, string fileName)
+        {
+            @namespace.Name = $"{_baseNamespace}.{prefix}";
+            var code = ClassFactory.CreateCode(@namespace);
+            WriteCode(Path.Join(prefix, fileName), code);
         }
 
         private static void WriteCode(string path, string code)

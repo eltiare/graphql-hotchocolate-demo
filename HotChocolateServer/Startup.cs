@@ -2,6 +2,8 @@ using HotChocolate;
 using HotChocolate.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -13,6 +15,11 @@ namespace HotChocolateServer
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddScoped(s =>
+            {
+                var config = s.GetRequiredService<IConfiguration>();
+                return new SqlConnection(config.GetValue<string>("ConnectionStrings:Database"));
+            });
             services.AddGraphQL(s => SchemaBuilder.New()
                 .AddServices(s)
                 .AddQueryType<Query>()

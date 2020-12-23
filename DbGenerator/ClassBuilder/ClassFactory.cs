@@ -10,7 +10,6 @@ namespace DbGenerator.ClassBuilder
     
     public class ClassFactory
     {
-
         public static string CreateCode(Namespace @namespace)
         {
             var n = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(@namespace.Name));
@@ -27,8 +26,11 @@ namespace DbGenerator.ClassBuilder
         {       
             if (@class.Properties == null)
                 throw new ArgumentException(nameof(@class.Properties) + " is required to be present");
+            if (@class.ProperName != @class.Name)
+                @class.Attributes.Add(("Table", new object[] { @class.Name }));
+            
             var classDeclaration = SyntaxFactory
-                .ClassDeclaration(@class.Name)
+                .ClassDeclaration(@class.ProperName)
                 .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword));
             if (@class.Attributes != null)
             {
@@ -38,8 +40,10 @@ namespace DbGenerator.ClassBuilder
             
             var propertyList = @class.Properties.Select(property =>
             {
+                List<(string nameof, object[] args)>? propertyAttrList = new List<(string nameof, object[] args)>();
+                propertyAttrList.Add(("Column", new object[] { property.Name }));
                 var sProp = SyntaxFactory
-                    .PropertyDeclaration(SyntaxFactory.ParseTypeName(property.Type), property.Name)
+                    .PropertyDeclaration(SyntaxFactory.ParseTypeName(property.Type), property.ProperName)
                     .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
                     .AddAccessorListAccessors(
                         SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
@@ -48,27 +52,33 @@ namespace DbGenerator.ClassBuilder
                             .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
                     );
                 if (!@class.IsView)
-                {
-                    var attrs = GenerateAttributes(property);
-                    if (attrs != null)
-                        sProp = sProp.AddAttributeLists(attrs);
-                }   
+                    propertyAttrList = MakeAttributesForProperty(property, propertyAttrList);
+                
+                if (propertyAttrList != null && propertyAttrList.Count > 0)
+                    sProp = sProp.AddAttributeLists(GenerateAttributes(propertyAttrList));
+                
                 return sProp;
             }).ToArray();
             return classDeclaration.AddMembers(propertyList);
         }
 
-        private static AttributeListSyntax? GenerateAttributes(Property property)
+        private static AttributeListSyntax? GenerateAttributes(IReadOnlyCollection<(string name, object[] args)> list)
         {
-            var list = new List<(string name, object[] args)>();
-            if (!property.IsRequired)
+            if (list == null || list.Count == 0)
+                return null;
+            var syntaxList = SyntaxFactory.SeparatedList(list.Select(l => GenerateAttribute(l.name, l.args)));
+            return SyntaxFactory.AttributeList( syntaxList);
+        }
+
+        private static List<(string name, object[] args)> MakeAttributesForProperty(Property property, List<(string name, object[] args)>? list)
+        {
+            list ??= new List<(string name, object[] args)>();
+            if (property.IsRequired)
                 list.Add(("Required", new object[] {}));
             if (property.MaxLength != null && property.MaxLength > 0 && property.Type == "string")
                 list.Add(("MaxLength", new object[] { property.MaxLength.Value }));
-            if (list.Count == 0)
-                return null;
-            var syntaxList = SyntaxFactory.SeparatedList(list.Select(l => GenerateAttribute(l.name, l.args)));
-            return SyntaxFactory.AttributeList( syntaxList); 
+            list.Add(("DbColType", new object[] { property.DbType }));
+            return list;
         }
 
         private static AttributeSyntax GenerateAttribute(string name, params object[] args)
@@ -77,14 +87,29 @@ namespace DbGenerator.ClassBuilder
                 SyntaxFactory.IdentifierName(name),
                 SyntaxFactory.AttributeArgumentList(
                     SyntaxFactory.SeparatedList(
-                        args.Select(a => SyntaxFactory.AttributeArgument(GenerateLiteralExp(a))).ToArray()
+                        args.Select(a => SyntaxFactory.AttributeArgument(GenerateExp(a))).ToArray()
                     )
                 )
             );
         }
 
-        private static LiteralExpressionSyntax GenerateLiteralExp(object value)
+        private static ExpressionSyntax GenerateExp(object value)
         {
+            if (value is Enum e)
+            {
+                var type = e.GetType();
+                var enumName = type.FullName;
+                if (enumName == null)
+                    return SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression);
+                var name = Enum.GetName(type, e);
+                return SyntaxFactory.MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    SyntaxFactory.IdentifierName(enumName),
+                    SyntaxFactory.Token(SyntaxKind.DotToken),
+                    SyntaxFactory.IdentifierName(name)
+                );
+            }
+            
             var num = SyntaxKind.NumericLiteralExpression;
             switch (value)
             {
